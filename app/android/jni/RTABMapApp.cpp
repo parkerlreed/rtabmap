@@ -41,6 +41,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifdef RTABMAP_ARENGINE
 #include "CameraAREngine.h"
 #endif
+#ifdef __ANDROID__
+#include "CameraMobileRealSense.h"
+#endif
 
 #include <rtabmap/core/Rtabmap.h>
 #include <rtabmap/core/util2d.h>
@@ -957,6 +960,15 @@ bool RTABMapApp::isBuiltWith(int cameraDriver) const
 		return false;
 #endif
 	}
+
+	if(cameraDriver == 4)
+	{
+#if defined(__ANDROID__) && defined(RTABMAP_REALSENSE2)
+		return true;
+#else
+		return false;
+#endif
+	}
 	return false;
 }
 
@@ -1013,6 +1025,23 @@ bool RTABMapApp::startCamera()
 	else if(cameraDriver_ == 3)
 	{
 		camera_ = new rtabmap::CameraMobile(upstreamRelocalizationMaxAcc_);
+	}
+	else if(cameraDriver_ == 4)
+	{
+#if defined(__ANDROID__) && defined(RTABMAP_REALSENSE2)
+		// A RealSense doesn't provide any pose, odometry is computed by the camera
+		// itself from the RGB-D stream, using the mapping parameters set by the user.
+		// 640x480@30 for both color and depth. 848x480 (the desktop default) halves
+		// the odometry rate on a phone, and the odometry has to stay real-time or
+		// tracking is lost as soon as the camera moves.
+		// upstreamRelocalizationMaxAcc_ is not forwarded: it filters the
+		// re-localization jumps of an AR SDK, which local odometry doesn't have.
+		rtabmap::CameraMobileRealSense * rsCamera = new rtabmap::CameraMobileRealSense(640, 480, 30);
+		rsCamera->setOdometryParameters(mappingParameters_);
+		camera_ = rsCamera;
+#else
+		UERROR("RTAB-Map is not built with RealSense support!");
+#endif
 	}
 
 	if(camera_ == 0)
@@ -1387,7 +1416,8 @@ int RTABMapApp::Render()
 			boost::mutex::scoped_lock  lock(cameraMutex_);
 			if(camera_!=0)
 			{
-				if(cameraDriver_ <= 2)
+				// All drivers but ARCore Java (3) capture in the opengl thread
+				if(cameraDriver_ != 3)
 				{
 					camera_->updateOnRender();
 				}

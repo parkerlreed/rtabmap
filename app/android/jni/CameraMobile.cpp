@@ -368,9 +368,18 @@ void CameraMobile::updateOnRender()
 	UScopeMutex lock(dataMutex_);
 	bool notify = !data_.isValid();
 
-	data_ = updateDataOnRender(dataPose_);
-	if(data_.isValid())
+	// Keep data that captureImage() hasn't consumed yet when there is no new frame:
+	// a camera slower than the render loop (e.g. a 30 Hz camera on a 60 Hz display)
+	// legitimately has nothing to return on some renders, and overwriting data_ with
+	// an empty frame would make captureImage() return invalid data, which
+	// SensorCaptureThread takes for the end of the stream and stops on for good.
+	Transform pose = dataPose_;
+	SensorData data = updateDataOnRender(pose);
+	if(data.isValid())
 	{
+		data_ = data;
+		dataPose_ = pose;
+
 		postUpdate();
 
 		if(notify)

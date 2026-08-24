@@ -328,7 +328,7 @@
     <string name="pref_title_mapping_core">Core</string>
     <string name="pref_title_mapping_database">Database</string>
     <string name="pref_title_camera_driver">Camera Driver</string>
-    <string name="pref_summary_camera_driver">AR sdk used for capturing 6DoF poses and images. A TOF camera is required to record a 3D model.</string>
+    <string name="pref_summary_camera_driver">AR sdk used for capturing 6DoF poses and images. A TOF camera is required to record a 3D model. RealSense (USB) instead uses an Intel RealSense D400 camera connected with a USB-OTG cable, the poses are then computed on the phone from the RGB-D stream.</string>
     <string name="pref_title_depth_from_motion">Depth From Motion</string>
     <string name="pref_summary_depth_from_motion">Use ARCore\'s depth API to compute depth image from motion. If the phone has a TOF camera and is supported by ARCore, results should be better. Currently supported only with ARCore NDK driver.</string>
     <string name="pref_title_arcore_relocalization_acc_thr">ARCore Re-Localization Acceleration Threshold</string>
@@ -390,6 +390,7 @@
         <item>"ARCore NDK"</item>
         <item>"AREngine NDK"</item>
         <item>"ARCore Java"</item>
+        <item>"RealSense (USB)"</item>
     </string-array>
     <string-array name="pref_camera_driver_values">
         <item>"-1"</item>
@@ -397,6 +398,7 @@
         <item>"1"</item>
         <item>"2"</item>
         <item>"3"</item>
+        <item>"4"</item>
     </string-array>
     <string-array name="pref_update_rate_keys">
         <item>"Max"</item>

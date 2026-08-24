@@ -100,6 +100,7 @@ import android.widget.ToggleButton;
 import com.google.ar.core.ArCoreApk;
 import com.google.atap.tangoservice.Tango;
 import com.huawei.hiar.AREnginesApk;
+import com.intel.realsense.librealsense.DeviceWatcher;
 
 
 // The main activity of the application. This activity shows debug information
@@ -263,6 +264,38 @@ public class RTABMapActivity extends FragmentActivity implements OnClickListener
 
 	ARCoreSharedCamera mArCoreCamera = null;
 	int mCameraDriver = 0;
+
+	// Set while waiting for the USB permission of a RealSense camera, holds the
+	// message to show when the scan finally starts.
+	private String mRealSenseStartMessage = null;
+	private final DeviceWatcher.Listener mRealSenseListener = new DeviceWatcher.Listener() {
+		@Override
+		public void onDeviceAttached() {
+			runOnUiThread(new Runnable() {
+				public void run() {
+					if(mRealSenseStartMessage != null) {
+						final String message = mRealSenseStartMessage;
+						mRealSenseStartMessage = null;
+						mProgressDialog.dismiss();
+						startCamera(message);
+					}
+				}
+			});
+		}
+		@Override
+		public void onDeviceDetached() {
+			runOnUiThread(new Runnable() {
+				public void run() {
+					mRealSenseStartMessage = null;
+					if(mCameraDriver == 4 &&
+					   (mState == State.STATE_CAMERA || mState == State.STATE_VISUALIZING_CAMERA)) {
+						mToast.makeText(getApplicationContext(), "RealSense camera disconnected! Stopping the scan.", mToast.LENGTH_LONG).show();
+						stopCamera();
+					}
+				}
+			});
+		}
+	};
 	
 	private String mIntentDbToOpen = null;
 
@@ -793,6 +826,27 @@ public class RTABMapActivity extends FragmentActivity implements OnClickListener
 				editor.commit();
 			}
 		}
+		else if(mCameraDriver == 4 && !RTABMapLib.isBuiltWith(nativeApplication, 4))
+		{
+			if(mIsARCoreAvailable)
+			{
+				SharedPreferences.Editor editor = sharedPref.edit();
+				editor.putString(getString(R.string.pref_key_camera_driver), "3");
+				editor.commit();
+			}
+			else if(CheckTangoCoreVersion(MIN_TANGO_CORE_VERSION) && RTABMapLib.isBuiltWith(nativeApplication, 0))
+			{
+				SharedPreferences.Editor editor = sharedPref.edit();
+				editor.putString(getString(R.string.pref_key_camera_driver), "0");
+				editor.commit();
+			}
+			else if(mIsAREngineAvailable && RTABMapLib.isBuiltWith(nativeApplication, 2))
+			{
+				SharedPreferences.Editor editor = sharedPref.edit();
+				editor.putString(getString(R.string.pref_key_camera_driver), "2");
+				editor.commit();
+			}
+		}
 		else if(mCameraDriver == 2 && (!mIsAREngineAvailable || !RTABMapLib.isBuiltWith(nativeApplication, 2)))
 		{
 			if(CheckTangoCoreVersion(MIN_TANGO_CORE_VERSION) && RTABMapLib.isBuiltWith(nativeApplication, 0))
@@ -867,6 +921,10 @@ public class RTABMapActivity extends FragmentActivity implements OnClickListener
 		super.onDestroy();
 
 		if(!DISABLE_LOG) Log.d(TAG, "onDestroy()");
+
+		// Closes the USB connection of a RealSense camera, if any.
+		DeviceWatcher.release();
+
 		// Synchronized to avoid racing onDrawFrame.
 		synchronized (this) {
 			RTABMapLib.destroyNativeApplication(nativeApplication);
@@ -1429,6 +1487,66 @@ public class RTABMapActivity extends FragmentActivity implements OnClickListener
 								}
 							}
 						} 
+					});
+				}
+			});
+			bindThread.start();
+		}
+		else if(mCameraDriver == 4) // RealSense (USB)
+		{
+			if(!RTABMapLib.isBuiltWith(nativeApplication, 4))
+			{
+				mToast.makeText(this, "RTAB-Map is not built with RealSense support! Cannot start a new scan.", mToast.LENGTH_LONG).show();
+				return;
+			}
+
+			if(!DeviceWatcher.isDeviceConnected(this))
+			{
+				mToast.makeText(this, "No RealSense camera detected! Connect a RealSense D400 camera with a USB-OTG cable, then start a new scan.", mToast.LENGTH_LONG).show();
+				return;
+			}
+
+			// Opens the camera and hands its USB file descriptor to librealsense,
+			// asking the user for the USB permission if it is not granted yet.
+			DeviceWatcher.init(getApplicationContext(), mRealSenseListener);
+
+			if(DeviceWatcher.getDeviceCount() == 0)
+			{
+				// A USB permission request is pending, mRealSenseListener calls us
+				// back with the same message once the camera has been opened.
+				mRealSenseStartMessage = message;
+				mProgressDialog.setTitle("");
+				mProgressDialog.setMessage("Waiting for USB permission...");
+				mProgressDialog.show();
+				resetNoTouchTimer(true);
+				return;
+			}
+
+			mProgressDialog.setTitle("");
+			mProgressDialog.setMessage(message);
+			mProgressDialog.show();
+			resetNoTouchTimer(true);
+
+			Thread bindThread = new Thread(new Runnable() {
+				public void run() {
+					final boolean cameraStartSucess = RTABMapLib.startCamera(nativeApplication, null, getApplicationContext(), getActivity(), 4);
+					runOnUiThread(new Runnable() {
+						public void run() {
+							mProgressDialog.dismiss();
+							if(!cameraStartSucess)
+							{
+								mToast.makeText(getApplicationContext(),
+										"Failed to initialize the RealSense camera! Make sure it is connected and that the USB permission has been granted.", mToast.LENGTH_LONG).show();
+							}
+							else
+							{
+								updateState(mState==State.STATE_VISUALIZING?State.STATE_VISUALIZING_CAMERA:State.STATE_CAMERA);
+								if(mState==State.STATE_VISUALIZING_CAMERA && mItemLocalizationMode.isChecked())
+								{
+									RTABMapLib.setPausedMapping(nativeApplication, false);
+								}
+							}
+						}
 					});
 				}
 			});
@@ -2069,6 +2187,11 @@ public class RTABMapActivity extends FragmentActivity implements OnClickListener
 					mCameraDriver == 2?"AREngine":"ARCore", value);
 			}
 		}
+		else if(key.equals("OdometryLost"))
+		{
+			if(value.equals("true"))
+				str = "Odometry lost! Move back to the last known location to recover.";
+		}
 		else if(key.equals("TangoServiceException"))
 			str = String.format("Tango service exception: %s", value);
 		else if(key.equals("FisheyeOverExposed"))
@@ -2424,6 +2547,9 @@ public class RTABMapActivity extends FragmentActivity implements OnClickListener
 		mProgressDialog.setTitle("");
 		mProgressDialog.setMessage("Stopping camera...");
 		mProgressDialog.show();
+
+		// Cancel a pending RealSense USB permission request, if any.
+		mRealSenseStartMessage = null;
 
 		if(mState == State.STATE_VISUALIZING_CAMERA)
 		{

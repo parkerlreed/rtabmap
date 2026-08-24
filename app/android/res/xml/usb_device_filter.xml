@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Intel RealSense cameras: any product of Intel's USB vendor id (0x8086 = 32902).
+     Used by the USB_DEVICE_ATTACHED intent-filter of RTABMapActivity so that
+     Android offers to open RTAB-Map when a camera is plugged, and grants the
+     USB permission persistently for that device. -->
+<resources>
+    <usb-device vendor-id="32902" />
+</resources>

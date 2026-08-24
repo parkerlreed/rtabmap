@@ -20,6 +20,7 @@ SET(LIBRARIES
 set(sources
   jni_interface.cpp
   CameraMobile.cpp
+  CameraMobileRealSense.cpp
   RTABMapApp.cpp
   scene.cpp
   point_cloud_drawable.cpp
@@ -116,6 +117,19 @@ IF(AREngine_FOUND)
     
 ENDIF(AREngine_FOUND)
 
+IF(realsense2_FOUND)
+
+  SET(INCLUDE_DIRS
+    ${INCLUDE_DIRS}
+    ${realsense2_INCLUDE_DIRS}
+  )
+  SET(LIBRARIES
+    ${LIBRARIES}
+    realsense2::realsense2 # target
+  )
+
+ENDIF(realsense2_FOUND)
+
 add_definitions(${PCL_DEFINITIONS})
 
 INCLUDE_DIRECTORIES(${INCLUDE_DIRS})
@@ -156,6 +170,16 @@ target_link_libraries(NativeRTABMap ${LIBRARIES}
   rtabmap_core
   rtabmap_utilite
 )
+
+IF(realsense2_FOUND)
+  # librealsense's Android backend gets the USB file descriptor from the java side
+  # through those JNI entry points (see DeviceWatcher.java). They are defined in a
+  # librealsense2.a object that no C++ code of this app references directly, so ask
+  # the linker explicitly to keep them.
+  target_link_options(NativeRTABMap PRIVATE
+    "-Wl,--undefined=Java_com_intel_realsense_librealsense_DeviceWatcher_nAddUsbDevice"
+    "-Wl,--undefined=Java_com_intel_realsense_librealsense_DeviceWatcher_nRemoveUsbDevice")
+ENDIF(realsense2_FOUND)
 
 # see ant.properties.in
 set_target_properties(NativeRTABMap PROPERTIES

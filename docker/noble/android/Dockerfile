@@ -217,3 +217,24 @@ RUN wget 'https://docs.google.com/uc?authuser=0&id=1rdaD2Z1QBv-SUeUy0oBmg3C2odfx
     cp -r arengine/arm64-v8a/* /opt/android/arm64-v8a/lib/. && \
     cp arengine/*.jar /opt/android/lib/ && \
     rm -r arengine
+
+# librealsense (RealSense D400 support over USB-OTG, see app/android/jni/CameraMobileRealSense.cpp)
+#  * FORCE_RSUSB_BACKEND is mandatory on Android: the SDK cannot access /dev/bus/usb,
+#    the USB file descriptor is handed over from the java side (DeviceWatcher.java).
+#  * BUILD_ROSBAG2=OFF: its fastcdr dependency is not installed, so it would be left
+#    dangling in realsense2Targets.cmake and break find_package(realsense2) downstream.
+#  * BUILD_RS2_ALL=OFF: the bundled static library is not installed anyway.
+#  * -include cerrno: the vendored nlohmann/json uses errno without including it,
+#    which NDK r21's libc++ does not pull in transitively.
+RUN echo "Install librealsense..." && \
+    git clone --depth 1 -b v2.58.3 https://github.com/IntelRealSense/librealsense.git && \
+    cd librealsense && \
+    mkdir build && \
+    cd build && \
+    cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_NDK=$ANDROID_NDK -DANDROID_NATIVE_API_LEVEL=23 -DBUILD_SHARED_LIBS=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/android/arm64-v8a -DCMAKE_FIND_ROOT_PATH="/opt/android/arm64-v8a/bin;/opt/android/arm64-v8a;/opt/android/arm64-v8a/share" -DFORCE_RSUSB_BACKEND=ON -DBUILD_EXAMPLES=OFF -DBUILD_GRAPHICAL_EXAMPLES=OFF -DBUILD_TOOLS=OFF -DBUILD_UNIT_TESTS=OFF -DBUILD_ROSBAG2=OFF -DBUILD_WITH_DDS=OFF -DBUILD_RS2_ALL=OFF -DENABLE_CCACHE=OFF -DCMAKE_CXX_FLAGS="-include cerrno" .. && \
+    make -j4 && \
+    find . -type f -name "*.a" -print0 \
+       | xargs -0 $ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android-strip -g -S -d --strip-debug && \
+    make install && \
+    cd /root && \
+    rm -rf librealsense
